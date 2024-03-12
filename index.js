@@ -3,18 +3,22 @@ const app = express();
 const http = require('http');
 const server = http.createServer(app);
 const { Server } = require('socket.io');
+const tmp = require('tmp');
+const fs = require('fs');
+const AWS = require('aws-sdk');
+
+const s3 = new AWS.S3({
+    endpoint: process.env.MINIO_ENDPOINT, // Use your MinIO server's endpoint
+    accessKeyId: process.env.MINIO_KEYID, // Default MinIO access key (change as needed)
+    secretAccessKey: process.env.MINIO_SECRET, // Default MinIO secret key (change as needed)
+    s3ForcePathStyle: true, // Needed with MinIO
+    signatureVersion: 'v4'
+  });
 
 server_option = {
     cors: {
-        // origin: '*',
-        // methods: ["GET", "POST"],
         allowedHeaders: ["glaucutu", "agent"],
-        // credentials: true,
     },
-    // allowRequest: (req, callback) => {
-    //     const { glaucutu } = req.headers
-    //     callback(null, glaucutu != undefined); // only allow requests without 'origin' header
-    // }
 }
 
 const io = new Server(server, server_option);
@@ -34,20 +38,54 @@ clientio.on("connection", (socket)=>{
     while(clientio.adapter.rooms.has(room)){
         room = randomRoomNumber()
     }
+
+    // create temporary file
+    const tmpobj = tmp.fileSync();
+    console.log('File: ', tmpobj.name);
+
     socket.join(room)
+
+    // write socket unique id and current timestamp to temporary file
+    fs.writeFileSync(tmpobj.name, `${socket.id}\nopened ${Date.now()}`)
+
     socket.emit("join-room", room);
     agentio.to(room).emit("client-connected")
 
     socket.on("vrevent", (arg)=>{
+        // write Jsonify of arg to temporary file
+        fs.writeFileSync(tmpobj.name, "vrevent")
+        fs.writeFileSync(tmpobj.name, JSON.stringify(arg))
         agentio.to(room).emit("vrevent", arg)
     })
     
     socket.on("webrtcevent", (arg)=>{
+        fs.writeFileSync(tmpobj.name, "webrtcevent")
+        fs.writeFileSync(tmpobj.name, JSON.stringify(arg))
         agentio.to(room).emit("webrtcevent", arg)
     })
 
     socket.on("disconnect", (arg)=>{
         agentio.to(room).emit("client-disconnected", arg)
+        fs.writeFileSync(tmpobj.name, `closed ${Date.now()}`)
+        const fileContent = fs.readFileSync(tmpobj.name);
+        // filename from room, socket.id and timestamp
+        const filename = `${room}-${socket.id}-${Date.now()}.txt`
+
+        const params = {
+            Bucket: process.env.S3_BUCKET_NAME,
+            Key: filename,
+            Body: fileContent
+        };
+
+        s3.upload(params, (err, data) => {
+            if (err) {
+                console.error(err);
+            } else {
+                console.log('File uploaded to S3:', data.Location);
+            }
+        });
+        
+        tmpobj.removeCallback()
     })
 });
 
