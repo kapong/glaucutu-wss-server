@@ -46,27 +46,27 @@ clientio.on("connection", (socket)=>{
     socket.join(room)
 
     // write append socket unique id and current timestamp to temporary file
-    fs.appendFileSync(tmpobj.name, `${socket.id}\nopened ${Date.now()}`)
+    fs.appendFileSync(tmpobj.name, `${socket.id}\nopened ${Date.now()}\n`)
 
     socket.emit("join-room", room);
     agentio.to(room).emit("client-connected")
 
     socket.on("vrevent", (arg)=>{
         // write Jsonify of arg to temporary file
-        fs.appendFileSync(tmpobj.name, "vrevent")
-        fs.appendFileSync(tmpobj.name, JSON.stringify(arg))
+        fs.appendFileSync(tmpobj.name, "vrevent\n")
+        fs.appendFileSync(tmpobj.name, JSON.stringify(arg) + "\n")
         agentio.to(room).emit("vrevent", arg)
     })
     
     socket.on("webrtcevent", (arg)=>{
-        fs.appendFileSync(tmpobj.name, "webrtcevent")
-        fs.appendFileSync(tmpobj.name, JSON.stringify(arg))
+        fs.appendFileSync(tmpobj.name, "webrtcevent\n")
+        fs.appendFileSync(tmpobj.name, JSON.stringify(arg) + "\n")
         agentio.to(room).emit("webrtcevent", arg)
     })
 
     socket.on("disconnect", (arg)=>{
         agentio.to(room).emit("client-disconnected", arg)
-        fs.appendFileSync(tmpobj.name, `closed ${Date.now()}`)
+        fs.appendFileSync(tmpobj.name, `closed ${Date.now()}\n`)
         const fileContent = fs.readFileSync(tmpobj.name);
         // filename from room, socket.id and timestamp
         const filename = `${room}-${socket.id}-${Date.now()}.txt`
